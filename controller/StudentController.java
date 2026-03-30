@@ -112,7 +112,11 @@ public class StudentController {
         try {
             Connection con = DBConnection.getConnection();
             Statement st = con.createStatement();
-            ResultSet rs = st.executeQuery("SELECT * FROM questions LIMIT 5");
+            ResultSet rs = st.executeQuery(
+                "SELECT q.* FROM questions q " +
+                "JOIN test_questions tq ON q.question_id = tq.question_id " +
+                "WHERE tq.test_id = 1"
+            );
             while (rs.next()) {
                 questions.add(new Question(
                     rs.getInt("question_id"),

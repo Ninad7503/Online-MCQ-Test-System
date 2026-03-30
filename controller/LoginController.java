@@ -10,7 +10,16 @@ public class LoginController {
     public void handleLogin(String email, String password,
         Stage stage){
             try {
+
+                System.out.println("Login button clicked!");
                 java.sql.Connection con = DBConnection.getConnection();
+                if (con == null) {
+                    System.out.println("DB CONNECTION FAILED ");
+                    return;
+                }
+                System.out.println("Email: " + email);
+                System.out.println("Password: " + password);
+                
 
                 String query = "SELECT * FROM users where email = ? AND password = ?";
                 PreparedStatement pst = con.prepareStatement(query);
@@ -28,6 +37,8 @@ public class LoginController {
                     if(role.equals("student")){
                         StudentController sc = new StudentController();
                         sc.showTestScreen(stage, userId);
+                    }else if(role.equals("admin")) {
+                        System.out.println("Admin login success");
                     }else{
                         System.out.println("Admin login not implemented yet");
                     }
