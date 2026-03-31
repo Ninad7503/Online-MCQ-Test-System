@@ -3,10 +3,13 @@ package controller;
 import db.DBConnection;
 import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
+import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
-import javafx.scene.layout.VBox;
+import javafx.scene.effect.DropShadow;
+import javafx.scene.layout.*;
+import javafx.scene.paint.Color;
 import javafx.stage.Stage;
 import javafx.util.Duration;
 import model.Question;
@@ -19,195 +22,211 @@ import java.util.ArrayList;
 
 public class StudentController {
 
-    ArrayList<Question> questions = new ArrayList<>();
-    int current = 0;
-    int score = 0;
+    private final ArrayList<Question> questions = new ArrayList<>();
+    private int current = 0;
+    private int score   = 0;
 
-    public void showTestScreen(Stage mystage, int studentId) {
-
-        final int attemptId = createAttempt(studentId); 
-
+    public void showTestScreen(Stage stage, int studentId) {
         loadQuestions();
+        if (questions.isEmpty()) {
+            showAlert("No questions found.");
+            return;
+        }
+        final int attemptId = createAttempt(studentId);
+        if (attemptId == -1) {
+            showAlert("Could not create test attempt.");
+            return;
+        }
+        buildTestUI(stage, attemptId);
+    }
+
+    private void buildTestUI(Stage stage, int attemptId) {
+        Label counterLabel = new Label("Question 1 / " + questions.size());
+        counterLabel.setStyle("-fx-font-size: 13px; -fx-text-fill: #888888;");
+
+        Label timerLabel = new Label("⏱  60s");
+        timerLabel.setStyle("-fx-font-size: 15px; -fx-font-weight: bold; -fx-text-fill: #00ffe7; -fx-effect: dropshadow(gaussian,#00ffe7,10,0.5,0,0);");
+
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+        HBox header = new HBox(counterLabel, spacer, timerLabel);
+        header.setAlignment(Pos.CENTER_LEFT);
+
+        ProgressBar progress = new ProgressBar(0);
+        progress.setMaxWidth(Double.MAX_VALUE);
+        progress.setStyle("-fx-accent: #00ffe7; -fx-background-color: #1e1e1e;");
 
         Label questionLabel = new Label();
-        RadioButton a = new RadioButton();
-        RadioButton b = new RadioButton();
-        RadioButton c = new RadioButton();
-        RadioButton d = new RadioButton();
+        questionLabel.setWrapText(true);
+        questionLabel.setStyle("-fx-font-size: 16px; -fx-font-weight: bold; -fx-text-fill: #ffffff;");
 
         ToggleGroup group = new ToggleGroup();
-        a.setToggleGroup(group);
-        b.setToggleGroup(group);
-        c.setToggleGroup(group);
-        d.setToggleGroup(group);
+        RadioButton[] opts = new RadioButton[4];
+        String[] letters = {"A", "B", "C", "D"};
+        VBox optionBox = new VBox(10);
+        for (int i = 0; i < 4; i++) {
+            opts[i] = new RadioButton();
+            opts[i].setToggleGroup(group);
+            styleRadio(opts[i]);
+            optionBox.getChildren().add(opts[i]);
+        }
 
-        Button nextBtn = new Button("Next");
+        Button nextBtn = new Button("Next  →");
+        nextBtn.setStyle("-fx-background-color: #00ffe7; -fx-text-fill: #0a0a0a; -fx-font-weight: bold; -fx-background-radius: 8; -fx-padding: 10 28;");
 
-        Label timerLabel = new Label("Time: 60");
-        timerLabel.setStyle("-fx-font-size: 14px; -fx-text-fill: red;");
+        Label feedback = new Label("");
+        feedback.setStyle("-fx-text-fill: #888888;");
 
-        final int[] timeLeft = {60};
+        loadQuestionIntoUI(questionLabel, opts, letters, 0);
 
-        Timeline timeline = new Timeline(
-            new KeyFrame(Duration.seconds(1), e -> {   
+        final int[] timeLeft = {questions.size() * 30};
+        final Timeline[] timelineWrapper = new Timeline[1];
+
+        timelineWrapper[0] = new Timeline(
+            new KeyFrame(Duration.seconds(1), e -> {
                 timeLeft[0]--;
-                timerLabel.setText("Time: " + timeLeft[0]);
+                timerLabel.setText("⏱  " + timeLeft[0] + "s");
+                if (timeLeft[0] <= 10) {
+                    timerLabel.setStyle("-fx-font-size: 15px; -fx-font-weight: bold; -fx-text-fill: #ff4d4d; -fx-effect: dropshadow(gaussian,#ff4d4d,10,0.5,0,0);");
+                }
                 if (timeLeft[0] <= 0) {
-                    showResult(mystage, attemptId);   
+                    saveCurrentAndFinish(group, opts, letters, attemptId, stage, timelineWrapper[0]);
                 }
             })
         );
-        timeline.setCycleCount(Timeline.INDEFINITE);
-        timeline.play();
-
-        questionLabel.setStyle("-fx-font-size: 16px; -fx-font-weight: bold;");
-        a.setStyle("-fx-font-size: 14px;");
-        b.setStyle("-fx-font-size: 14px;");
-        c.setStyle("-fx-font-size: 14px;");
-        d.setStyle("-fx-font-size: 14px;");
-        nextBtn.setStyle(
-            "-fx-background-color: #667eea;" +
-            "-fx-text-fill: white;" +
-            "-fx-background-radius: 10;"
-        );
-
-        showQuestion(questionLabel, a, b, c, d);
+        timelineWrapper[0].setCycleCount(Timeline.INDEFINITE);
+        timelineWrapper[0].play();
 
         nextBtn.setOnAction(e -> {
-            RadioButton selected = (RadioButton) group.getSelectedToggle();  
-            saveResponse(attemptId, questions.get(current).id,
-                selected != null ? selected.getText() : "");          
+            RadioButton selected = (RadioButton) group.getSelectedToggle();
+            if (selected == null) {
+                feedback.setText("⚠ Please select an option.");
+                return;
+            }
+            feedback.setText("");
+            String selectedLetter = (String) selected.getUserData();
+            saveResponse(attemptId, questions.get(current).id, selectedLetter);
 
-            if (selected != null) {
-                if (selected.getText().equals(questions.get(current).correct)) {
-                    score++;
-                }
+            if (selectedLetter.equalsIgnoreCase(questions.get(current).correct)) {
+                score++;
             }
 
             current++;
-
             if (current < questions.size()) {
-                showQuestion(questionLabel, a, b, c, d);
+                loadQuestionIntoUI(questionLabel, opts, letters, current);
                 group.selectToggle(null);
+                counterLabel.setText("Question " + (current + 1) + " / " + questions.size());
+                progress.setProgress((double) current / questions.size());
+                for (RadioButton rb : opts) styleRadio(rb);
             } else {
-                timeline.stop();                       
-                showResult(mystage, attemptId);        
+                if (timelineWrapper[0] != null) timelineWrapper[0].stop();
+                showResult(stage, attemptId);
             }
         });
 
-      
-        VBox root = new VBox(15, timerLabel, questionLabel, a, b, c, d, nextBtn);
-        root.setAlignment(Pos.CENTER);
-        root.setStyle(
-            "-fx-padding: 20;" +
-            "-fx-background-color: #f5f7fa;"
-        );
+        VBox card = new VBox(16, header, progress, questionLabel, optionBox, feedback, nextBtn);
+        card.setPadding(new Insets(28));
+        card.setStyle("-fx-background-color: #111111; -fx-background-radius: 16; -fx-border-color: #222222; -fx-border-radius: 16;");
+        card.setMaxWidth(520);
 
-        Scene scene = new Scene(root, 400, 300);
-        mystage.setScene(scene);
-        mystage.show();
+        DropShadow shadow = new DropShadow();
+        shadow.setColor(Color.web("#00ffe7"));
+        shadow.setRadius(20);
+        card.setEffect(shadow);
+
+        StackPane root = new StackPane(card);
+        root.setStyle("-fx-background-color: #0a0a0a;");
+        stage.setScene(new Scene(root, 580, 460));
+        stage.show();
+    }
+
+    private void loadQuestionIntoUI(Label qLabel, RadioButton[] opts, String[] letters, int idx) {
+        Question q = questions.get(idx);
+        qLabel.setText("Q" + (idx + 1) + ".  " + q.text);
+        String[] texts = {q.a, q.b, q.c, q.d};
+        for (int i = 0; i < 4; i++) {
+            opts[i].setText(letters[i] + ".  " + texts[i]);
+            opts[i].setUserData(letters[i]);
+        }
+    }
+
+    private void saveCurrentAndFinish(ToggleGroup group, RadioButton[] opts, String[] letters, int attemptId, Stage stage, Timeline timeline) {
+        if (current < questions.size()) {
+            RadioButton selected = (RadioButton) group.getSelectedToggle();
+            String selectedLetter = selected != null ? (String) selected.getUserData() : "";
+            saveResponse(attemptId, questions.get(current).id, selectedLetter);
+            if (!selectedLetter.isEmpty() && selectedLetter.equalsIgnoreCase(questions.get(current).correct)) {
+                score++;
+            }
+        }
+        if (timeline != null) timeline.stop();
+        showResult(stage, attemptId);
+    }
+
+    private void styleRadio(RadioButton rb) {
+        String normal = "-fx-font-size: 14px; -fx-text-fill: #cccccc; -fx-background-color: transparent;";
+        String selectedStyle = "-fx-font-size: 14px; -fx-text-fill: #00ffe7; -fx-font-weight: bold; -fx-background-color: transparent;";
+        rb.setStyle(normal);
+        rb.selectedProperty().addListener((obs, old, selected) -> rb.setStyle(selected ? selectedStyle : normal));
+    }
+
+    private void showResult(Stage stage, int attemptId) {
+        updateScore(attemptId, score);
+        int total = questions.size();
+        double pct = total > 0 ? (double) score / total * 100 : 0;
+
+        Label scoreLabel = new Label(score + " / " + total);
+        scoreLabel.setStyle("-fx-font-size: 48px; -fx-font-weight: bold; -fx-text-fill: #ffffff;");
+
+        Button exitBtn = new Button("Exit");
+        exitBtn.setStyle("-fx-background-color: #ff4d4d; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 8; -fx-padding: 10 30;");
+        exitBtn.setOnAction(e -> stage.close());
+
+        VBox card = new VBox(14, new Label("Test Complete!"), scoreLabel, exitBtn);
+        card.setAlignment(Pos.CENTER);
+        card.setStyle("-fx-background-color: #111111; -fx-padding: 40; -fx-background-radius: 16;");
+
+        stage.setScene(new Scene(new StackPane(card), 400, 360));
     }
 
     private void loadQuestions() {
-        try {
-            Connection con = DBConnection.getConnection();
-            Statement st = con.createStatement();
-            ResultSet rs = st.executeQuery(
-                "SELECT q.* FROM questions q " +
-                "JOIN test_questions tq ON q.question_id = tq.question_id " +
-                "WHERE tq.test_id = 1"
-            );
+        try (Connection con = DBConnection.getConnection(); Statement st = con.createStatement()) {
+            ResultSet rs = st.executeQuery("SELECT q.* FROM questions q JOIN test_questions tq ON q.question_id = tq.question_id WHERE tq.test_id = 1 ORDER BY RANDOM()");
             while (rs.next()) {
-                questions.add(new Question(
-                    rs.getInt("question_id"),
-                    rs.getString("question_text"),
-                    rs.getString("option_a"),
-                    rs.getString("option_b"),
-                    rs.getString("option_c"),
-                    rs.getString("option_d"),
-                    rs.getString("correct_option")
-                ));
+                questions.add(new Question(rs.getInt("question_id"), rs.getString("question_text"), rs.getString("option_a"), rs.getString("option_b"), rs.getString("option_c"), rs.getString("option_d"), rs.getString("correct_option")));
             }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
-
-    private void showQuestion(Label q, RadioButton a, RadioButton b,
-                               RadioButton c, RadioButton d) {
-        Question ques = questions.get(current);
-        q.setText("Q" + (current + 1) + ": " + ques.text);
-        a.setText(ques.a);
-        b.setText(ques.b);
-        c.setText(ques.c);
-        d.setText(ques.d);
-    }
-
-    private void showResult(Stage stage, int attemptId) { 
-        Label result = new Label("Score: " + score + "/" + questions.size());
-        result.setStyle(
-            "-fx-font-size: 18px;" +
-            "-fx-text-fill: green;" +
-            "-fx-font-weight: bold;"
-        );
-
-        Button exitBtn = new Button("Exit");
-        exitBtn.setStyle(
-            "-fx-background-color: #ff4d4d;" +
-            "-fx-text-fill: white;"
-        );
-        exitBtn.setOnAction(e -> stage.close());
-
-        VBox root = new VBox(20, result, exitBtn);
-        root.setAlignment(Pos.CENTER);
-        root.setStyle("-fx-background-color: #f5f7fa;");
-
-        Scene scene = new Scene(root, 400, 300);
-        stage.setScene(scene);
-
-        updateScore(attemptId, score);  
+        } catch (Exception e) { e.printStackTrace(); }
     }
 
     private int createAttempt(int studentId) {
-        try {
-            Connection con = DBConnection.getConnection();
-            String query = "INSERT INTO test_attempts(student_id, test_id) VALUES (?,1) RETURNING attempt_id";
-            PreparedStatement pst = con.prepareStatement(query);
+        try (Connection con = DBConnection.getConnection()) {
+            PreparedStatement pst = con.prepareStatement("INSERT INTO test_attempts(student_id, test_id, attempted_at) VALUES (?,1,NOW()) RETURNING attempt_id");
             pst.setInt(1, studentId);
             ResultSet rs = pst.executeQuery();
-            if (rs.next()) {
-                return rs.getInt("attempt_id");
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+            if (rs.next()) return rs.getInt("attempt_id");
+        } catch (Exception e) { e.printStackTrace(); }
         return -1;
     }
 
     private void saveResponse(int attemptId, int questionId, String selectedOption) {
-        try {
-            Connection con = DBConnection.getConnection();
-            String query = "INSERT INTO responses(attempt_id, question_id, selected_option) VALUES (?,?,?)";
-            PreparedStatement pst = con.prepareStatement(query);
-            pst.setInt(1, attemptId);
-            pst.setInt(2, questionId);
-            pst.setString(3, selectedOption);
+        try (Connection con = DBConnection.getConnection()) {
+            PreparedStatement pst = con.prepareStatement("INSERT INTO responses(attempt_id, question_id, selected_option) VALUES (?,?,?) ON CONFLICT (attempt_id, question_id) DO UPDATE SET selected_option = EXCLUDED.selected_option");
+            pst.setInt(1, attemptId); pst.setInt(2, questionId); pst.setString(3, selectedOption);
             pst.executeUpdate();
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+        } catch (Exception e) { e.printStackTrace(); }
     }
 
     private void updateScore(int attemptId, int score) {
-        try {
-            Connection con = DBConnection.getConnection();
-            String query = "UPDATE test_attempts SET score=? WHERE attempt_id=?";
-            PreparedStatement pst = con.prepareStatement(query);
-            pst.setInt(1, score);
-            pst.setInt(2, attemptId);
+        try (Connection con = DBConnection.getConnection()) {
+            PreparedStatement pst = con.prepareStatement("UPDATE test_attempts SET score=?, completed_at=NOW() WHERE attempt_id=?");
+            pst.setInt(1, score); pst.setInt(2, attemptId);
             pst.executeUpdate();
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+        } catch (Exception e) { e.printStackTrace(); }
+    }
+
+    private void showAlert(String msg) {
+        Alert a = new Alert(Alert.AlertType.ERROR);
+        a.setContentText(msg);
+        a.showAndWait();
     }
 }
