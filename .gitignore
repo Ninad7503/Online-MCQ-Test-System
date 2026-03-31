@@ -1,0 +1,13 @@
+# JavaFX SDK
+javafx-sdk-21.0.10/
+
+# Compiled class files
+*.class
+
+# macOS
+.DS_Store
+
+# IDE files
+.idea/
+*.iml
+.vscode/
